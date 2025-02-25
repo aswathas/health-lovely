@@ -7,6 +7,7 @@ import {
   Zap, Apple, ActivitySquare, Coffee, Wind
 } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import SOSButton from '@/components/SOSButton';
 
 interface HealthMetric {
   value: number;
@@ -150,6 +151,18 @@ export default function Dashboard() {
           <div className="text-sm">Overall Health Score</div>
           <div className="text-3xl font-bold">{calculateHealthScore()}%</div>
         </div>
+        <button
+          className="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 shadow-lg"
+          onClick={() => {
+            const sosButton = document.querySelector('[data-sos-button]');
+            if (sosButton instanceof HTMLElement) {
+              sosButton.click();
+            }
+          }}
+        >
+          <Activity className="h-5 w-5" />
+          Emergency SOS
+        </button>
       </div>
 
       {/* Quick Stats Grid */}
@@ -377,6 +390,7 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      <SOSButton />
     </div>
   );
 }

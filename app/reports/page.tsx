@@ -4,10 +4,14 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { Card } from '@/components/ui/card';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { showToast } from '@/lib/toast';
 import { Activity, Heart, FileText, Microscope, PieChart } from 'lucide-react';
 import { format } from 'date-fns';
 import UploadAnalyze from './components/UploadAnalyze';
+import OralCameraAssessment from '@/app/assessment/components/OralCameraAssessment';
+import { Check, AlertTriangle } from 'lucide-react';
 
 interface Report {
   id: string;
@@ -294,7 +298,26 @@ export default function ReportsPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">Health Reports</h1>
+      <ToastContainer position="bottom-right" />
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Medical Reports</h1>
+        <div className="flex gap-4">
+          <OralCameraAssessment 
+            onAssessmentComplete={(results) => {
+              // Save assessment results to local storage
+              const assessments = JSON.parse(localStorage.getItem('oralAssessments') || '[]');
+              assessments.push({
+                date: new Date().toISOString(),
+                ...results
+              });
+              localStorage.setItem('oralAssessments', JSON.stringify(assessments));
+              
+              // Show success message
+              showToast('success', 'Oral assessment completed and saved');
+            }} 
+          />
+        </div>
+      </div>
 
       <div className="space-y-8">
         <UploadAnalyze onAnalysisComplete={handleAnalysisComplete} />
@@ -409,6 +432,56 @@ export default function ReportsPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Add Oral Assessments Section */}
+      <div className="mt-8">
+        <h2 className="text-xl font-semibold mb-4">Oral Health Assessments</h2>
+        <div className="grid gap-4">
+          {JSON.parse(localStorage.getItem('oralAssessments') || '[]')
+            .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            .map((assessment: any, index: number) => (
+              <div key={index} className="bg-white rounded-lg shadow p-4">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-medium text-gray-900">
+                      Assessment on {new Date(assessment.date).toLocaleDateString()}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Analyzed with {assessment.model} model
+                    </p>
+                  </div>
+                  <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                    {new Date(assessment.date).toLocaleTimeString()}
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {assessment.findings.map((finding: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className={`flex items-start gap-2 p-2 rounded ${
+                        finding.severity === 'normal'
+                          ? 'bg-green-50 text-green-700'
+                          : finding.severity === 'attention'
+                          ? 'bg-yellow-50 text-yellow-700'
+                          : 'bg-red-50 text-red-700'
+                      }`}
+                    >
+                      {finding.severity === 'normal' ? (
+                        <Check className="h-5 w-5 mt-0.5" />
+                      ) : (
+                        <AlertTriangle className="h-5 w-5 mt-0.5" />
+                      )}
+                      <div>
+                        <p className="font-medium">{finding.feature}</p>
+                        <p className="text-sm opacity-90">{finding.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+        </div>
       </div>
     </div>
   );
