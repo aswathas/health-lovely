@@ -1,18 +1,18 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Card } from '@/components/ui/card';
-import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/hooks/useToast';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
-
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { Card } from "@/components/ui/card";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/useToast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import { checkAllergicMedicines } from "@/utils/allergicMedicines";
 interface NewVisitForm {
   doctor_name: string;
   specialty: string;
@@ -27,15 +27,16 @@ interface NewVisitForm {
 export default function NewDoctorVisit() {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<NewVisitForm>({
-    doctor_name: '',
-    specialty: '',
-    visit_date: new Date().toISOString().split('T')[0],
-    reason: '',
-    diagnosis: '',
-    prescription: '',
-    notes: '',
-    follow_up_date: ''
+    doctor_name: "",
+    specialty: "",
+    visit_date: new Date().toISOString().split("T")[0],
+    reason: "",
+    diagnosis: "",
+    prescription: "",
+    notes: "",
+    follow_up_date: "",
   });
+  const [allergicWarnings, setAllergicWarnings] = useState<string[]>([]);
 
   const { user } = useAuth();
   const router = useRouter();
@@ -48,34 +49,32 @@ export default function NewDoctorVisit() {
 
     try {
       if (!user) {
-        showToast('Please sign in to add a visit', 'error');
-        router.push('/auth/login');
+        showToast("Please sign in to add a visit", "error");
+        router.push("/auth/login");
         return;
       }
 
       if (!formData.doctor_name || !formData.visit_date) {
-        showToast('Please fill in all required fields', 'error');
+        showToast("Please fill in all required fields", "error");
         return;
       }
 
-      const { error } = await supabase
-        .from('doctor_visits')
-        .insert([
-          {
-            ...formData,
-            user_id: user.id,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }
-        ]);
+      const { error } = await supabase.from("doctor_visits").insert([
+        {
+          ...formData,
+          user_id: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ]);
 
       if (error) throw error;
 
-      showToast('Visit added successfully', 'success');
-      router.push('/doctor-visits');
+      showToast("Visit added successfully", "success");
+      router.push("/doctor-visits");
     } catch (error: any) {
-      console.error('Error adding visit:', error);
-      showToast(error.message || 'Failed to add visit', 'error');
+      console.error("Error adding visit:", error);
+      showToast(error.message || "Failed to add visit", "error");
     } finally {
       setLoading(false);
     }
@@ -86,6 +85,12 @@ export default function NewDoctorVisit() {
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+
+    // Check for allergic medicines when prescription changes
+    if (name === "prescription") {
+      const allergicMeds = checkAllergicMedicines(value);
+      setAllergicWarnings(allergicMeds);
+    }
   };
 
   return (
@@ -180,6 +185,21 @@ export default function NewDoctorVisit() {
                 onChange={handleInputChange}
                 rows={3}
               />
+              {allergicWarnings.length > 0 && (
+                <div className="mt-2 p-3 bg-red-100 text-red-700 rounded-md">
+                  <p className="font-medium">
+                    Warning: Allergic Medicines Detected!
+                  </p>
+                  <p className="text-sm">
+                    The following medicines are known allergens:
+                  </p>
+                  <ul className="list-disc list-inside text-sm">
+                    {allergicWarnings.map((med) => (
+                      <li key={med}>{med}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -197,12 +217,12 @@ export default function NewDoctorVisit() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => router.push('/doctor-visits')}
+                onClick={() => router.push("/doctor-visits")}
               >
                 Cancel
               </Button>
               <Button type="submit" disabled={loading}>
-                {loading ? 'Adding Visit...' : 'Add Visit'}
+                {loading ? "Adding Visit..." : "Add Visit"}
               </Button>
             </div>
           </form>

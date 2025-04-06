@@ -235,11 +235,17 @@ export default function MedicalProfilePage() {
             />
           ) : (
             <CBCForm
-              cbcValues={profile.cbc_values || {}}
-              onChange={(updatedCBC) =>
-                setProfile((prev) => ({ ...prev, cbc_values: updatedCBC }))
-              }
-            />
+                values={profile.cbc_values || {}}
+                onChange={(updatedCBC) => {
+                  setProfile((prev) => ({
+                    ...prev,
+                    cbc_values: {
+                      ...(prev.cbc_values || {}),
+                      ...updatedCBC,
+                    } as CBCValues,
+                  }));
+                }}
+              />
           )}
         </div>
       </div>

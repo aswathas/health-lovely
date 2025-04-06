@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
-import { Groq } from 'groq-sdk';
+import { NextRequest, NextResponse } from "next/server";
+import Groq from "groq-sdk";
 
 // Check if API key is configured
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -11,14 +11,21 @@ const groq = new Groq({
   apiKey: GROQ_API_KEY!
 });
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    if (!GROQ_API_KEY) {
-      throw new Error('Groq API key is not configured');
+    const apiKey = process.env.GROQ_API_KEY;
+    
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "GROQ_API_KEY environment variable is missing" },
+        { status: 500 }
+      );
     }
-
-    const { image } = await request.json();
-    if (!image) {
+    
+    const groq = new Groq({ apiKey });
+    const { imageBase64 } = await request.json();
+    
+    if (!imageBase64) {
       return NextResponse.json(
         { error: 'No image data provided' },
         { status: 400 }
@@ -26,7 +33,7 @@ export async function POST(request: Request) {
     }
 
     // Validate base64 image
-    if (!image.startsWith('data:image/')) {
+    if (!imageBase64.startsWith('data:image/')) {
       return NextResponse.json(
         { error: 'Invalid image format' },
         { status: 400 }
@@ -71,7 +78,7 @@ export async function POST(request: Request) {
               type: 'image',
               source: {
                 type: 'base64',
-                data: image.split(',')[1],
+                data: imageBase64.split(',')[1],
                 mediaType: 'image/jpeg'
               }
             }
@@ -157,13 +164,10 @@ export async function POST(request: Request) {
       model: 'groq',
       ...analysisData
     });
-  } catch (error) {
-    console.error('Groq analysis error:', error);
+  } catch (error: any) {
+    console.error("Error in oral image analysis:", error);
     return NextResponse.json(
-      { 
-        error: error instanceof Error ? error.message : 'Failed to analyze image with Groq',
-        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
-      },
+      { error: error.message || "Internal Server Error" },
       { status: 500 }
     );
   }
