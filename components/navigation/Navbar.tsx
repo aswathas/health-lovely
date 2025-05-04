@@ -1,8 +1,8 @@
 "use client";
 
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { 
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import {
   Home,
   Activity,
   FileText,
@@ -12,20 +12,22 @@ import {
   LogOut,
   Stethoscope,
   LineChart,
-  Clock
-} from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { showToast } from '@/lib/toast';
+  Clock,
+  Database,
+  Brain, // Import Database icon instead of Heart
+} from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { showToast } from "@/lib/toast";
+import { Chat } from "groq-sdk/resources/index.mjs";
 
 const navItems = [
-  { name: 'Dashboard', href: '/dashboard', icon: Home },
-  { name: 'Health Profile', href: '/medical-profile', icon: User },
-  { name: 'Doctor Visits', href: '/doctor-visits', icon: Stethoscope },
-  { name: 'Reports', href: '/reports', icon: LineChart },
-  { name: 'Timeline', href: '/timeline', icon: Clock },
-  { name: 'Investigations', href: '/investigations', icon: FileText },
-  { name: 'Appointments', href: '/appointments', icon: Calendar },
-  { name: 'Settings', href: '/settings', icon: Settings },
+  { name: "Dashboard", href: "/dashboard", icon: Home },
+  { name: "Doctor Visits", href: "/doctor-visits", icon: Stethoscope },
+  { name: "Recovery & Backup", href: "/recovery", icon: Database },
+  { name: "AI Chat", href: "/doctor-visits/chat", icon: Brain }, // Updated name and icon
+  { name: "Reports", href: "/reports", icon: LineChart },
+  { name: "Timeline", href: "/timeline", icon: Clock },
+  { name: "Settings", href: "/settings", icon: Settings },
 ];
 
 export default function Navbar() {
@@ -36,10 +38,10 @@ export default function Navbar() {
   const handleSignOut = async () => {
     try {
       await signOut();
-      router.push('/auth/login');
-      showToast.success('Signed out successfully');
+      router.push("/auth/login");
+      showToast.success("Signed out successfully");
     } catch (error) {
-      showToast.error('Error signing out');
+      showToast.error("Error signing out");
     }
   };
 
@@ -49,20 +51,18 @@ export default function Navbar() {
         <Activity className="h-8 w-8 text-blue-600" />
         <span className="text-xl font-bold">Lovely</span>
       </div>
-      
+
       <div className="space-y-2">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
-          
+
           return (
             <Link
               key={item.href}
               href={item.href}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                isActive 
-                  ? 'bg-blue-50 text-blue-600' 
-                  : 'hover:bg-gray-50'
+                isActive ? "bg-blue-50 text-blue-600" : "hover:bg-gray-50"
               }`}
             >
               <Icon className="h-5 w-5" />

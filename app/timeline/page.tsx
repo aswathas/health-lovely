@@ -1,318 +1,296 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
-import { useRouter } from "next/navigation";
-import { Card } from "@/components/ui/card";
-import { showToast } from "@/lib/toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { format } from "date-fns";
-import { Stethoscope, FileText, Activity, AlertCircle, Pill, Calendar, ChevronDown } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import HealthScoreGraph from "@/components/timeline/HealthScoreGraph";
 
 interface TimelineEvent {
   id: string;
   date: string;
-  type: "doctor_visit" | "test_result" | "cbc_test" | "appointment" | "medication";
+  type: string;
   title: string;
   description: string;
-  metadata: {
-    hospital?: string;
-    doctor_name?: string;
-    documents?: Record<string, unknown>;
-    values?: Record<string, unknown>;
-    status?: "normal" | "abnormal" | "critical";
-    medication?: {
-      name: string;
-      dosage: string;
-      adherence: boolean;
-      lastTaken?: string;
-    };
+  metadata: any;
+  healthScore?: {
+    score: number;
+    analysis: string;
   };
 }
 
+interface HealthScoreDataPoint {
+  date: string;
+  score: number;
+  diagnosis: string;
+  doctor: string;
+  analysis?: string;
+}
+
 export default function Timeline() {
-  const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
-  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [healthScores, setHealthScores] = useState<HealthScoreDataPoint[]>([]);
+  const [loadingScores, setLoadingScores] = useState(false);
+  const { user } = useAuth();
   const supabase = createClientComponentClient();
-  const router = useRouter();
 
   useEffect(() => {
-    fetchTimelineEvents();
-  }, []);
+    if (user) {
+      fetchTimelineData();
+    }
+  }, [user]);
 
-  const fetchTimelineEvents = async () => {
+  const fetchTimelineData = async () => {
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) {
-        router.push("/auth/login");
-        return;
-      }
+      setLoading(true);
 
-      // Fetch all relevant data in parallel
-      const [
-        visitsResult,
-        cbcResult,
-        medicationsResult,
-        appointmentsResult,
-      ] = await Promise.all([
-        supabase
-          .from("doctor_visits")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .order("visit_date", { ascending: false }),
-        supabase
-          .from("cbc_tests")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .order("test_date", { ascending: false }),
-        supabase
-          .from("medications")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("appointments")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .order("appointment_date", { ascending: false }),
-      ]);
+      // Fetch doctor visits and ORDER BY visit_date ASCENDING
+      const { data: visitsData, error: visitsError } = await supabase
+        .from("doctor_visits")
+        .select("*")
+        .eq("user_id", user?.id)
+        .order("visit_date", { ascending: true }); // Changed to ascending
 
-      const timelineEvents: TimelineEvent[] = [];
+      if (visitsError) throw visitsError;
 
-      // Process doctor visits
-      if (visitsResult.data) {
-        timelineEvents.push(
-          ...visitsResult.data.map((visit) => ({
-            id: visit.id,
-            date: visit.visit_date,
-            type: "doctor_visit",
-            title: `Doctor Visit: ${visit.doctor_name}`,
-            description: visit.notes || "No notes provided",
-            metadata: {
-              hospital: visit.hospital,
-              doctor_name: visit.doctor_name,
-              documents: visit.documents,
-            },
-          }))
-        );
-      }
+      // Process visits into timeline events
+      const timelineEvents: TimelineEvent[] =
+        visitsData?.map((visit) => ({
+          id: visit.id,
+          date: visit.visit_date,
+          type: "doctor_visit",
+          title: `Doctor Visit: ${visit.doctor_name}`,
+          description: visit.diagnosis || "No diagnosis provided",
+          metadata: {
+            doctor_name: visit.doctor_name,
+            specialty: visit.specialty,
+            reason: visit.reason,
+            diagnosis: visit.diagnosis,
+            prescription: visit.prescription,
+            notes: visit.notes,
+          },
+        })) || [];
 
-      // Process CBC tests
-      if (cbcResult.data) {
-        timelineEvents.push(
-          ...cbcResult.data.map((test) => ({
-            id: test.id,
-            date: test.test_date,
-            type: "cbc_test",
-            title: "CBC Test Results",
-            description: `WBC: ${test.wbc}, RBC: ${test.rbc}, Platelets: ${test.platelets}`,
-            metadata: {
-              values: {
-                wbc: test.wbc,
-                rbc: test.rbc,
-                platelets: test.platelets,
-                hemoglobin: test.hemoglobin,
-              },
-              status: test.status,
-            },
-          }))
-        );
-      }
-
-      // Process medications
-      if (medicationsResult.data) {
-        timelineEvents.push(
-          ...medicationsResult.data.map((med) => ({
-            id: med.id,
-            date: med.lastTaken || med.created_at,
-            type: "medication",
-            title: `Medication: ${med.name}`,
-            description: `${med.dosage} - ${med.frequency}`,
-            metadata: {
-              medication: {
-                name: med.name,
-                dosage: med.dosage,
-                adherence: med.lastTaken ? true : false,
-                lastTaken: med.lastTaken,
-              },
-            },
-          }))
-        );
-      }
-
-      // Process appointments
-      if (appointmentsResult.data) {
-        timelineEvents.push(
-          ...appointmentsResult.data.map((apt) => ({
-            id: apt.id,
-            date: apt.appointment_date,
-            type: "appointment",
-            title: "Scheduled Appointment",
-            description: apt.notes || `Appointment with ${apt.doctor_name}`,
-            metadata: {
-              doctor_name: apt.doctor_name,
-              hospital: apt.hospital_name,
-            },
-          }))
-        );
-      }
-
-      // Sort all events by date
-      timelineEvents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setEvents(timelineEvents);
+
+      // Calculate health scores for doctor visits
+      await calculateHealthScores(visitsData || []);
     } catch (error) {
-      showToast("error", "Failed to fetch timeline data");
       console.error("Error fetching timeline data:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleEventExpansion = (id: string) => {
-    setExpandedEvents((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
-      return newSet;
-    });
-  };
+  const calculateHealthScores = async (visits: any[]) => {
+    try {
+      setLoadingScores(true);
 
-  const getEventIcon = (type: TimelineEvent["type"]) => {
-    switch (type) {
-      case "doctor_visit":
-        return <Stethoscope className="h-5 w-5 text-blue-500" />;
-      case "test_result":
-      case "cbc_test":
-        return <FileText className="h-5 w-5 text-purple-500" />;
-      case "appointment":
-        return <Calendar className="h-5 w-5 text-green-500" />;
-      case "medication":
-        return <Pill className="h-5 w-5 text-orange-500" />;
-      default:
-        return <AlertCircle className="h-5 w-5 text-gray-500" />;
+      const scorePromises = visits.map(async (visit) => {
+        // Skip if there's no diagnosis
+        if (!visit.diagnosis) {
+          return {
+            date: visit.visit_date,
+            score: 50, // Default neutral score
+            diagnosis: "No diagnosis provided",
+            doctor: visit.doctor_name,
+          };
+        }
+
+        // Call our API to get health score for this diagnosis
+        const response = await fetch("/api/health-score", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            diagnosis: visit.diagnosis,
+            visitDetails: {
+              reason: visit.reason,
+              prescription: visit.prescription,
+              notes: visit.notes,
+            },
+            visitId: visit.id, // Add this to identify the visit
+          }),
+        });
+
+        if (!response.ok) {
+          console.error("Failed to analyze diagnosis:", visit.diagnosis);
+          return {
+            date: visit.visit_date,
+            score: 50, // Default neutral score
+            diagnosis: visit.diagnosis,
+            doctor: visit.doctor_name,
+          };
+        }
+
+        const scoreData = await response.json();
+        return {
+          date: visit.visit_date,
+          score: scoreData.score,
+          diagnosis: visit.diagnosis,
+          doctor: visit.doctor_name,
+          analysis: scoreData.analysis,
+        };
+      });
+
+      const scores = await Promise.all(scorePromises);
+      setHealthScores(scores);
+    } catch (error) {
+      console.error("Error calculating health scores:", error);
+    } finally {
+      setLoadingScores(false);
     }
   };
 
-  const getEventColor = (event: TimelineEvent) => {
-    if (event.type === "cbc_test" && event.metadata.status) {
-      switch (event.metadata.status) {
-        case "normal":
-          return "bg-green-50 border-green-200";
-        case "abnormal":
-          return "bg-yellow-50 border-yellow-200";
-        case "critical":
-          return "bg-red-50 border-red-200";
-      }
-    }
-
-    switch (event.type) {
-      case "doctor_visit":
-        return "bg-blue-50 border-blue-200";
-      case "medication":
-        return event.metadata.medication?.adherence
-          ? "bg-green-50 border-green-200"
-          : "bg-orange-50 border-orange-200";
-      default:
-        return "bg-gray-50 border-gray-200";
-    }
-  };
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Health Timeline</h1>
-        <p className="text-gray-600">Track your health journey</p>
-      </div>
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-6">Health Timeline</h1>
 
-      {loading ? (
-        <div className="text-center py-8">
-          <p>Loading timeline...</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {events.map((event) => (
-            <div
-              key={event.id}
-              className={`p-4 rounded-lg border ${getEventColor(event)} transition-all`}
-            >
-              <div
-                className="flex items-start gap-4 cursor-pointer"
-                onClick={() => toggleEventExpansion(event.id)}
-              >
-                <div className="mt-1">{getEventIcon(event.type)}</div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-900">{event.title}</h3>
-                    <ChevronDown
-                      className={`h-5 w-5 text-gray-400 transition-transform ${
-                        expandedEvents.has(event.id) ? "transform rotate-180" : ""
-                      }`}
-                    />
+      <Tabs defaultValue="graph">
+        <TabsList className="mb-6">
+          <TabsTrigger value="graph">Health Progression</TabsTrigger>
+          <TabsTrigger value="timeline">Timeline Events</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="graph" className="space-y-6">
+          <Card className="p-6">
+            <HealthScoreGraph
+              healthScores={healthScores}
+              isLoading={loadingScores}
+            />
+          </Card>
+
+          {healthScores.length > 0 && (
+            <Card className="p-6">
+              <h3 className="text-lg font-medium mb-4">Health Insights</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <div className="text-sm text-gray-500 mb-1">
+                    Latest Health Score
                   </div>
-                  <p className="text-sm text-gray-500">
-                    {format(new Date(event.date), "PPP")}
-                  </p>
+                  <div className="text-3xl font-bold text-blue-600">
+                    {healthScores.length > 0
+                      ? healthScores.sort(
+                          (a, b) =>
+                            new Date(b.date).getTime() -
+                            new Date(a.date).getTime()
+                        )[0].score
+                      : "N/A"}
+                  </div>
+                </div>
+
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <div className="text-sm text-gray-500 mb-1">
+                    Average Score
+                  </div>
+                  <div className="text-3xl font-bold text-green-600">
+                    {healthScores.length > 0
+                      ? Math.round(
+                          healthScores.reduce(
+                            (acc, curr) => acc + curr.score,
+                            0
+                          ) / healthScores.length
+                        )
+                      : "N/A"}
+                  </div>
+                </div>
+
+                <div className="bg-purple-50 p-4 rounded-lg">
+                  <div className="text-sm text-gray-500 mb-1">Health Trend</div>
+                  <div className="text-3xl font-bold text-purple-600">
+                    {(() => {
+                      if (healthScores.length < 2) return "Not enough data";
+
+                      const sortedScores = [...healthScores].sort(
+                        (a, b) =>
+                          new Date(a.date).getTime() -
+                          new Date(b.date).getTime()
+                      );
+
+                      const firstScore = sortedScores[0].score;
+                      const lastScore =
+                        sortedScores[sortedScores.length - 1].score;
+
+                      const change = Math.round(
+                        ((lastScore - firstScore) / firstScore) * 100
+                      );
+
+                      if (change > 5) return `Improving (+${change}%)`;
+                      if (change < -5) return `Declining (${change}%)`;
+                      return "Stable";
+                    })()}
+                  </div>
                 </div>
               </div>
+            </Card>
+          )}
+        </TabsContent>
 
-              {expandedEvents.has(event.id) && (
-                <div className="mt-4 pl-12">
-                  <div className="text-sm text-gray-600 space-y-2">
-                    <p>{event.description}</p>
+        <TabsContent value="timeline">
+          <Card className="p-6">
+            <div className="space-y-8">
+              {events.length > 0 ? (
+                events.map((event) => (
+                  <div
+                    key={event.id}
+                    className="relative pl-8 pb-8 border-l-2 border-gray-200 last:border-0"
+                  >
+                    {/* Timeline dot */}
+                    <div className="absolute left-[-8px] w-4 h-4 bg-blue-500 rounded-full"></div>
+
+                    <div className="mb-1 text-sm text-gray-500">
+                      {format(new Date(event.date), "PPP")}
+                    </div>
+                    <h3 className="text-lg font-medium">{event.title}</h3>
+                    <p className="text-gray-700 mt-1">{event.description}</p>
 
                     {event.type === "doctor_visit" && (
-                      <>
-                        <p>
-                          <span className="font-medium">Hospital:</span> {event.metadata.hospital}
-                        </p>
-                        <p>
-                          <span className="font-medium">Doctor:</span> {event.metadata.doctor_name}
-                        </p>
-                      </>
-                    )}
-
-                    {event.type === "cbc_test" && event.metadata.values && (
-                      <div className="grid grid-cols-2 gap-2">
-                        {Object.entries(event.metadata.values).map(([key, value]) => (
-                          <p key={key}>
-                            <span className="font-medium">{key.toUpperCase()}:</span> {value}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-
-                    {event.type === "medication" && event.metadata.medication && (
-                      <>
-                        <p>
-                          <span className="font-medium">Dosage:</span> {event.metadata.medication.dosage}
-                        </p>
-                        {event.metadata.medication.lastTaken && (
-                          <p>
-                            <span className="font-medium">Last Taken:</span>{" "}
-                            {format(new Date(event.metadata.medication.lastTaken), "PPP p")}
+                      <div className="mt-2 pt-2 border-t border-dashed border-gray-200">
+                        {event.metadata.specialty && (
+                          <p className="text-sm">
+                            <span className="font-medium">Specialty:</span>{" "}
+                            {event.metadata.specialty}
                           </p>
                         )}
-                        <p
-                          className={`font-medium ${
-                            event.metadata.medication.adherence ? "text-green-600" : "text-orange-600"
-                          }`}
-                        >
-                          Status: {event.metadata.medication.adherence ? "Taken" : "Missed"}
-                        </p>
-                      </>
+                        {event.metadata.prescription && (
+                          <p className="text-sm">
+                            <span className="font-medium">Prescription:</span>{" "}
+                            {event.metadata.prescription}
+                          </p>
+                        )}
+                        {event.metadata.notes && (
+                          <p className="text-sm">
+                            <span className="font-medium">Notes:</span>{" "}
+                            {event.metadata.notes}
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">
+                    No events in your timeline yet
+                  </p>
                 </div>
               )}
             </div>
-          ))}
-        </div>
-      )}
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

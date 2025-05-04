@@ -54,27 +54,44 @@ export default function NewDoctorVisit() {
         return;
       }
 
+      // Validate required fields
       if (!formData.doctor_name || !formData.visit_date) {
         showToast("Please fill in all required fields", "error");
+        setLoading(false);
         return;
       }
 
-      const { error } = await supabase.from("doctor_visits").insert([
-        {
-          ...formData,
-          user_id: user.id,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      ]);
+      // Include version field for concurrency control
+      const visitData = {
+        ...formData,
+        user_id: user.id,
+        version: 1, // Initial version
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
 
-      if (error) throw error;
+      // Insert with better error handling
+      const { data, error } = await supabase
+        .from("doctor_visits")
+        .insert([visitData])
+        .select();
+
+      if (error) {
+        console.error("Supabase error:", error);
+        throw new Error(error.message || "Failed to add visit");
+      }
 
       showToast("Visit added successfully", "success");
       router.push("/doctor-visits");
     } catch (error: any) {
-      console.error("Error adding visit:", error);
-      showToast(error.message || "Failed to add visit", "error");
+      console.error(
+        "Error adding visit:",
+        error instanceof Error ? error.message : JSON.stringify(error)
+      );
+      showToast(
+        error instanceof Error ? error.message : "Failed to add visit",
+        "error"
+      );
     } finally {
       setLoading(false);
     }
